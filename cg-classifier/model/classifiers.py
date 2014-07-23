@@ -7,6 +7,7 @@ Created on Jul 23, 2014
 import cPickle
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression as LogisticClassifier
+from sklearn.ensemble import GradientBoostingClassifier
 
 from processing.variants import VariantFile
 
@@ -64,3 +65,14 @@ class LogisticRegression(Classifier):
             clf = LogisticClassifier(*args, **kwargs)
 
         super(LogisticRegression, self).__init__(clf)
+        
+        
+class GradientBoosting(Classifier):
+
+    def __init__(self, default=True, *args, **kwargs):
+        if default:
+            clf = GradientBoostingClassifier(n_estimators=150, subsample=1)
+        else:
+            clf = GradientBoostingClassifier(*args, **kwargs)
+
+        super(GradientBoosting, self).__init__(clf)

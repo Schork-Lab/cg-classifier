@@ -27,15 +27,26 @@ class VCF(object):
         return self._df[features].values
 
     def _process(self):
+        '''
+        Main processing function. Initial processing steps that might include feature generation
+        or alternate representation of the dataframe.
+        
+        '''
 
+        # Overall processing functions
         self._df['variant_type'] = self._df.apply(_variant_type, axis=1)
+
         # Add other processing functions
+
+        # Generate features
+        self._generate_features()
+
         return
 
     def _generate_features(self):
         # Generate features
         self._df['DP'] = 0
-        return
+
 
     def load_vcf(self, filename):
         '''

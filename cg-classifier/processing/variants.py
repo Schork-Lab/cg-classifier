@@ -247,8 +247,13 @@ class VariantFile(object):
             df_numeric[n] = df_numeric[n].astype(float)
 
 
+
         # Create feature dataframe
         self._features_df = df_numeric.join([df_categ, df_geno, df_allele, df_binary])
+
+        # Get rid of NaNs
+        self._features_df.CGA_SDO.fillna(value=0, inplace=True)
+        self._features_df.GQ.fillna(value=-999, inplace=True)
 
 
 class VcfTsv(VariantFile):

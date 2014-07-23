@@ -19,16 +19,16 @@ class VariantFile(object):
                     for feature in subfeatures]
 
     def __init__(self):
-        self._df = None
+        self._variant_df = None
+        self._features_df = None
 
     @property
-    def df(self):
-        return self._df
+    def variants(self):
+        return self._variant_df
 
     @property
     def features(self):
-
-        return self._df[features].values
+        return self._features_df
 
     @staticmethod
     def _get_phase(series, gt_column):
@@ -153,11 +153,86 @@ class VariantFile(object):
             return False
 
 
+    def _generate_features(self):
+
+        def multiallele_GL_formatting(df, gl_col):
+            GL_df = pd.DataFrame.from_records([i.split(",") for i in df[gl_col]],
+                                               columns=['AA_' + gl_col,
+                                                        'AB_' + gl_col,
+                                                        'BB_' + gl_col,
+                                                        'AC_' + gl_col,
+                                                        'BC_' + gl_col,
+                                                        'CC_' + gl_col])
+            GL_df.index = df.index
+            GL_df.fillna(value=-999, inplace=True)
+            df = df.join(GL_df)
+            return df
+
+
+        def allele_col_formatting(df, al_col):
+            df[al_col + "_1"] = [int(i.split(",")[0]) if i.split(",")[0] != "." else -999
+                                 for i in df[al_col]]
+            df[al_col + "_2"] = [int(i.split(",")[1]) if i.split(",")[1] != "." else -999
+                                 for i in df[al_col]]
+            return df
+
+
+        def categ_formatting(df, cat_col):
+            temp_dummies = pd.get_dummies(df[cat_col], prefix=cat_col)
+            df = df.join(temp_dummies, how='left')
+            return df
+
+
+        # Formatting Allelic Features
+        df_allele = df[features['allele']]
+        for a_cols in allele_features:
+            df_allele = allele_col_formatting(df_allele, a_cols)
+            del df_allele[a_cols]
+
+
+        # Formatting binary features
+        df_binary = df[features['binary']]
+        for b in binary_features:
+            df_binary[b].fillna(value=0, inplace=True)
+            df_binary[b] = df_binary[b].map(lambda x: 1 if x != 0 else 0)
+
+
+        # Formatting categorical features
+        df_categ = df[features['categorical']]
+        for c in categorical_features:
+            df_categ = categ_formatting(df_categ, c)
+            del df_categ[c]
+
+
+        # Formatting genotype features
+        df_geno = df[features['genotype']]
+        for g_cols in geno_features:
+            df_geno = multiallele_GL_formatting(df_geno, g_cols)
+            del df_geno[g_cols]
+
+
+        # Formatting numeric features
+        df_numeric = df[features['numeric']]
+        for n in numeric_features:
+            df_numeric[n] = df_numeric[n].astype(float)
+
+
+        # Create feature dataframe
+        self._features_df = df_numeric.join([df_categ, df_geno, df_allele, df_binary])
+
+
 class VcfTsv(VariantFile):
     def __init__(self, filename):
-        self._df = self._load_vcf_tsv(filename)
+
+        # Load VCF
+        self._variant_df = self._load_vcf_tsv(filename)
+
+        # Process variants
         self._process()
-        return
+
+        # Generate features
+        self._generate_features()
+
 
     def _process(self):
         '''
@@ -166,10 +241,7 @@ class VcfTsv(VariantFile):
         
         '''
 
-        df = self._df
-
-        # Overall processing functions
-        self._df['variant_type'] = self._df.apply(self._variant_type, axis=1)
+        df = self._variant_df
 
         # Ignore CNV and Repeats
         discard_vars = ['<INS:ME:ALU>', '<INS:ME:L1>', '<CGA_CNVWIN>', '<INS:ME:SVA>']
@@ -204,14 +276,7 @@ class VcfTsv(VariantFile):
         # Get number of reads supporting the reference allele
         df['ref_read_depth'] = df.apply(ref_read_depth, axis=1)
 
-        # Generate features
-        self._generate_features()
-
-        return
-
-    def _generate_features(self):
-        # Generate features
-        self._df['DP'] = 0
+        self._variant_df = df
 
 
     def _load_vcf(self, filename):
@@ -230,7 +295,7 @@ class VcfTsv(VariantFile):
 class MasterVar(VariantFile):
 
     def __init__(self, filename):
-        self._df = self._load_master(filename)
+        self._variant_df = self._load_master(filename)
         self._process()
         return
 
@@ -238,7 +303,7 @@ class MasterVar(VariantFile):
         return None
 
     def _process(self):
-        self._df = None
+        self._variant_df = None
 
 
 

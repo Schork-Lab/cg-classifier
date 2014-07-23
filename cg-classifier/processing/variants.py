@@ -8,15 +8,13 @@ import pandas as pd
 class VariantFile(object):
 
     index = ['CHROM', 'POS', 'REF', 'ALT']
-    features = {'allele': ['HQ', 'EHQ', 'CGA_CEHQ', 'AD'],
+    features_columns = {'allele': ['HQ', 'EHQ', 'CGA_CEHQ', 'AD'],
                 'binary': ['CGA_XR', 'CGA_RPT', 'multiallele'],
                 'categorical': ['FT', 'vartype1', 'vartype2', 'phase', 'zygosity'],
-                'numeric': ['FT', 'vartype1', 'vartype2', 'phase', 'zygosity']
+                'genotype': ['GL', 'CGA_CEGL'],
+                'numeric': ['CGA_SDO', 'GQ', 'DP', 'CGA_RDP']
                 }
 
-    all_features = [feature
-                    for subfeatures in features.itervalues()
-                    for feature in subfeatures]
 
     def __init__(self):
         self._variant_df = None
@@ -28,7 +26,7 @@ class VariantFile(object):
 
     @property
     def features(self):
-        return self._features_df
+        return self._features_df.astype(float)
 
     @staticmethod
     def _get_phase(series, gt_column):
@@ -108,20 +106,39 @@ class VariantFile(object):
             assert False
 
     @staticmethod
+    def _get_ref_read_depth(series):
+        '''
+        This function returns the number of reads
+        supporting the reference allele
+        
+        Required columns: [DP, AD, zygosity, a1]
+        '''
+
+        dp = series['DP']  # total read depth
+        ad = series['AD'].replace(".", '0')  # replace missing with 0
+        ad1, ad2 = ad.split(",")  # allelic depth for allele1 and allele2
+
+        if series['zygosity'] == 'het-ref':
+            if series['a1'] != series['REF']:  # allele1 is non-reference
+                return  dp - int(ad1)  # total read depth - allele1 read depth
+            return dp - int(ad2)  # total read depth - allele2 read depth
+
+        # allele1 and allele2 read depths are identical
+        if series['zygosity'] == 'hom-alt':
+            return  dp - int(ad2)
+
+        if series['zygosity'] == 'het-alt':
+            return  dp - sum([ int(ad1), int(ad2) ])
+
+        return dp  # hom-ref read depth == total read depth
+
+    @staticmethod
     def _get_vartype(series, allele_base_col):
         '''
         This function assigns the following vartypes to the 
         allele specified by allele_base_col: snp, mnp, ins, del, indel or SV
         
         '''
-        ref = series['REF']
-        alt = series[allele_base_col]
-        if is_snp(ref, alt): return 'snp'
-        elif is_sv(ref, alt): return 'sv'
-        elif is_mnp(ref, alt): return 'mnp'
-        elif is_insertion(ref, alt): return 'ins'
-        elif is_del(ref, alt): return 'del'
-        else: return 'indel or SV'
 
         def is_snp(ref, alt):
             """ Return whether or not the variant is a SNP """
@@ -151,6 +168,17 @@ class VariantFile(object):
             if len(ref) > len(alt):
                 return True
             return False
+
+        ref = series['REF']
+        alt = series[allele_base_col]
+        if is_snp(ref, alt): return 'snp'
+        elif is_sv(ref, alt): return 'sv'
+        elif is_mnp(ref, alt): return 'mnp'
+        elif is_insertion(ref, alt): return 'ins'
+        elif is_del(ref, alt): return 'del'
+        else: return 'indel or SV'
+
+
 
 
     def _generate_features(self):
@@ -182,38 +210,40 @@ class VariantFile(object):
             df = df.join(temp_dummies, how='left')
             return df
 
+        df = self._variant_df
+        features = VariantFile.features_columns
 
         # Formatting Allelic Features
         df_allele = df[features['allele']]
-        for a_cols in allele_features:
+        for a_cols in df_allele.columns:
             df_allele = allele_col_formatting(df_allele, a_cols)
             del df_allele[a_cols]
 
 
         # Formatting binary features
         df_binary = df[features['binary']]
-        for b in binary_features:
+        for b in df_binary.columns:
             df_binary[b].fillna(value=0, inplace=True)
             df_binary[b] = df_binary[b].map(lambda x: 1 if x != 0 else 0)
 
 
         # Formatting categorical features
         df_categ = df[features['categorical']]
-        for c in categorical_features:
+        for c in df_categ.columns:
             df_categ = categ_formatting(df_categ, c)
             del df_categ[c]
 
 
         # Formatting genotype features
         df_geno = df[features['genotype']]
-        for g_cols in geno_features:
+        for g_cols in df_geno.columns:
             df_geno = multiallele_GL_formatting(df_geno, g_cols)
             del df_geno[g_cols]
 
 
         # Formatting numeric features
         df_numeric = df[features['numeric']]
-        for n in numeric_features:
+        for n in df_numeric.columns:
             df_numeric[n] = df_numeric[n].astype(float)
 
 
@@ -274,12 +304,12 @@ class VcfTsv(VariantFile):
         df['AD'].fillna(value='0,0', inplace=True)
 
         # Get number of reads supporting the reference allele
-        df['ref_read_depth'] = df.apply(ref_read_depth, axis=1)
+        df['ref_read_depth'] = df.apply(self._get_ref_read_depth, axis=1)
 
         self._variant_df = df
 
 
-    def _load_vcf(self, filename):
+    def _load_vcf_tsv(self, filename):
         '''
         Loads in a vcf file, aware of gzipped files.
         '''
@@ -288,7 +318,7 @@ class VcfTsv(VariantFile):
             compression = 'gzip'
 
         df = pd.read_table(filename, sep='\t', compression=compression)
-        df.set_index(['#CHROM', 'POS', 'REF', 'ALT'], drop=False, inplace=True)
+        df.set_index(['CHROM', 'POS', 'REF', 'ALT'], drop=False, inplace=True)
         return df
 
 

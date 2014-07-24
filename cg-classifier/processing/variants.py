@@ -249,6 +249,11 @@ class VcfTsv(VariantFile):
         df = df[~df.ALT.isin(discard_vars)]
 
         # Parse many fields
+        parse_columns = ['phase', 'multiallele', 'zygosity',
+                         'a1', 'a2', 'vartype1', 'vartype2',
+                          'ref_read_depth']
+        for column in parse_columns:
+            df[column] = ''
         df = df.apply(self._parse, axis=1)
 
         # Ignore sex chromosomes with - as phaser

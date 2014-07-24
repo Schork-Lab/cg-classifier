@@ -29,45 +29,30 @@ class VariantFile(object):
         return self._features_df.astype(float)
 
     @staticmethod
-    def _get_phase(series, gt_column):
+    def _get_phase(genotype):
         '''
-        
-        :param series:
-        :type series:
-        :param gt_column:
-        :type gt_column:
+        Returns phase from genotype
         '''
-        '''
-        Returns phase status from a GT field
-        '''
-        if "|" in series[gt_column]:
+
+        if "|" in genotype:
             return "|"
-        if "/" in series[gt_column]:
+        if "/" in genotype:
             return "/"
         else:
             return '-'
 
     @staticmethod
-    def _get_allele(series, sample_column, phase_column,
+    def _get_allele(sample, phase, ref, alt,
                     chromosome_num=0):
         '''
         Using the field info field in a sample column and the phasing
         field, parses out the allele from the first or second chromosome.
         
-        :param series:
-        :type series:
-        :param sample_column:
-        :type sample_column:
-        :param phase_column:
-        :type phase_column:
-        :param chromosome_num:
-        :type chromosome_num:
         '''
 
         # Assumes first info field is GT
-        gt_split = series[phase_column]
-        allele_calls = series[sample_column].split(":")[0].split(gt_split)
-        alleles = [series['REF']] + series['ALT'].split(",")
+        allele_calls = sample.split(":")[0].split(phase)
+        alleles = [ref] + alt.split(",")
         try:
             allele_number = int(allele_calls[chromosome_num])
             allele = alleles[allele_number]
@@ -76,7 +61,7 @@ class VariantFile(object):
         return allele
 
     @staticmethod
-    def _get_zygosity(series):
+    def _get_zygosity(a1, a2, ref):
         '''
         Based on the alleles present in sample, determines the zygosity
         of the individual in comparison to the reference.
@@ -85,18 +70,18 @@ class VariantFile(object):
         :type series:
         '''
 
-        allele_set = set([series['a1'], series['a2'], series['REF']])
+        allele_set = set([a1, a2, ref])
         num_of_alleles = len(allele_set)
 
         if num_of_alleles == 1:
             return 'hom-ref'
 
         elif (num_of_alleles == 2  and
-            series['a1'] == series['a2']):
+              a1 == a2):
             return 'hom-alt'
 
         elif (num_of_alleles == 2 and
-              series['a1'] != series['a2']):
+              a1 != a2):
             return 'het-ref'
 
         elif num_of_alleles == 3 :
@@ -133,7 +118,7 @@ class VariantFile(object):
         return dp  # hom-ref read depth == total read depth
 
     @staticmethod
-    def _get_vartype(series, allele_base_col):
+    def _get_vartype(ref, alt):
         '''
         This function assigns the following vartypes to the 
         allele specified by allele_base_col: snp, mnp, ins, del, indel or SV
@@ -169,8 +154,6 @@ class VariantFile(object):
                 return True
             return False
 
-        ref = series['REF']
-        alt = series[allele_base_col]
         if is_snp(ref, alt): return 'snp'
         elif is_sv(ref, alt): return 'sv'
         elif is_mnp(ref, alt): return 'mnp'
@@ -205,10 +188,8 @@ class VariantFile(object):
             return df
 
 
-        def categ_formatting(df, cat_col):
-            temp_dummies = pd.get_dummies(df[cat_col], prefix=cat_col)
-            df = df.join(temp_dummies, how='left')
-            return df
+        def format_category(df, category):
+            return pd.get_dummies(df[category], prefix=category)
 
         df = self._variant_df
         features = VariantFile.features_columns
@@ -221,17 +202,13 @@ class VariantFile(object):
 
 
         # Formatting binary features
-        df_binary = df[features['binary']]
-        for b in df_binary.columns:
-            df_binary[b].fillna(value=0, inplace=True)
-            df_binary[b] = df_binary[b].map(lambda x: 1 if x != 0 else 0)
+        df_binary = df[features['binary']].fillna(value=0).applymap(lambda x: 1 if x != 0 else 0)
 
 
         # Formatting categorical features
-        df_categ = df[features['categorical']]
-        for c in df_categ.columns:
-            df_categ = categ_formatting(df_categ, c)
-            del df_categ[c]
+        df_categ = pd.concat([format_category(df, category)
+                              for category in features['categorical']],
+                              axis=1)
 
 
         # Formatting genotype features
@@ -242,11 +219,7 @@ class VariantFile(object):
 
 
         # Formatting numeric features
-        df_numeric = df[features['numeric']]
-        for n in df_numeric.columns:
-            df_numeric[n] = df_numeric[n].astype(float)
-
-
+        df_numeric = df[features['numeric']].astype(float)
 
         # Create feature dataframe
         self._features_df = df_numeric.join([df_categ, df_geno, df_allele, df_binary])
@@ -268,39 +241,18 @@ class VcfTsv(VariantFile):
         # Generate features
         self._generate_features()
 
-
     def _process(self):
-        '''
-        Main processing function. Initial processing steps that might include feature generation
-        or alternate representation of the dataframe.
-        
-        '''
-
         df = self._variant_df
 
         # Ignore CNV and Repeats
         discard_vars = ['<INS:ME:ALU>', '<INS:ME:L1>', '<CGA_CNVWIN>', '<INS:ME:SVA>']
         df = df[~df.ALT.isin(discard_vars)]
 
-        # Phase genotype and remove edge cases, likely at sex chromosome sites
-        df['phase'] = df.apply(self._get_phase, args=['GT'], axis=1)
-        df = df[df.phase != "-"]
+        # Parse many fields
+        df = df.apply(self._parse, axis=1)
 
-        # Get allele base sequences
-        # TODO: Combine phasing and getting alleles into one step
-        # i.e. df['a1'], df['a2'] = df['GT'].map(lambda x: x.replace('|','/').split('/'))
-        df['a1'] = df.apply(self._get_allele, args=['GT', 'phase', 0], axis=1)
-        df['a2'] = df.apply(self._get_allele, args=['GT', 'phase', 1], axis=1)
-
-        # Multiallelic site if more than one alternative allele
-        df['multiallele'] = df['ALT'].map(lambda x: 1 if "," in x else 0)
-
-        # Zygosity: hom-ref, het-ref, hom-alt, het-alt
-        df['zygosity'] = df.apply(self._get_zygosity, axis=1)
-
-        # Set the variant type based on number of bases in reference versus allele
-        df['vartype1'] = df.apply(self._get_vartype, args=['a1'], axis=1)
-        df['vartype2'] = df.apply(self._get_vartype, args=['a2'], axis=1)
+        # Ignore sex chromosomes with - as phaser
+        df = df[df.phase != '-']
 
         # Ignore structural variants
         df = df[(df.vartype1 != 'sv') & (df.vartype2 != 'sv')]
@@ -308,10 +260,44 @@ class VcfTsv(VariantFile):
         # Fill missing allelic depth with 0,0 reads
         df['AD'].fillna(value='0,0', inplace=True)
 
-        # Get number of reads supporting the reference allele
-        df['ref_read_depth'] = df.apply(self._get_ref_read_depth, axis=1)
-
         self._variant_df = df
+
+    def _parse(self, series):
+        '''
+        Main processing function. Initial processing steps that might include feature generation
+        or alternate representation of the dataframe.
+        
+        '''
+
+        ref, alt = series['REF'], series['ALT']
+        sample = series['GT']
+
+        # Phase genotype and remove edge cases, likely at sex chromosome sites
+        series['phase'] = self._get_phase(series['GT'])
+        if series['phase'] == '-':
+            return series
+
+        # Get allele base sequences
+        series['a1'] = self._get_allele(sample, series['phase'], ref, alt,
+                                    chromosome_num=0)
+        series['a2'] = self._get_allele(sample, series['phase'], ref, alt,
+                                    chromosome_num=1)
+
+        # Multiallelic site if more than one alternative allele
+        series['multiallele'] = 1 if ',' in alt else 0
+
+        # Zygosity: hom-ref, het-ref, hom-alt, het-alt
+        series['zygosity'] = self._get_zygosity(series['a1'], series['a2'], ref)
+
+        # Set the variant type based on number of bases in reference versus allele
+        series['vartype1'] = self._get_vartype(ref, series['a1'])
+        series['vartype2'] = self._get_vartype(ref, series['a2'])
+
+        # Get number of reads supporting the reference allele
+        series['ref_read_depth'] = self._get_ref_read_depth(series)
+
+        return series
+
 
 
     def _load_vcf_tsv(self, filename):

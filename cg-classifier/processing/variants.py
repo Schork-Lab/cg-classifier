@@ -5,16 +5,17 @@ Created on Jul 22, 2014
 '''
 import pandas as pd
 
+
 class VariantFile(object):
 
     index = ['CHROM', 'POS', 'REF', 'ALT']
     features_columns = {'allele': ['HQ', 'EHQ', 'CGA_CEHQ', 'AD'],
                 'binary': ['CGA_XR', 'CGA_RPT', 'multiallele'],
-                'categorical': ['FT', 'vartype1', 'vartype2', 'phase', 'zygosity'],
+                'categorical': ['FT', 'vartype1', 'vartype2',
+                                'phase', 'zygosity'],
                 'genotype': ['GL', 'CGA_CEGL'],
                 'numeric': ['CGA_SDO', 'GQ', 'DP', 'CGA_RDP']
                 }
-
 
     def __init__(self):
         self._variant_df = None
@@ -47,7 +48,7 @@ class VariantFile(object):
         '''
         Using the field info field in a sample column and the phasing
         field, parses out the allele from the first or second chromosome.
-        
+
         '''
 
         # Assumes first info field is GT
@@ -65,7 +66,7 @@ class VariantFile(object):
         '''
         Based on the alleles present in sample, determines the zygosity
         of the individual in comparison to the reference.
-        
+
         :param series:
         :type series:
         '''
@@ -84,7 +85,7 @@ class VariantFile(object):
               a1 != a2):
             return 'het-ref'
 
-        elif num_of_alleles == 3 :
+        elif num_of_alleles == 3:
             return 'het-alt'
 
         else:
@@ -95,7 +96,7 @@ class VariantFile(object):
         '''
         This function returns the number of reads
         supporting the reference allele
-        
+
         Required columns: [DP, AD, zygosity, a1]
         '''
 
@@ -113,21 +114,22 @@ class VariantFile(object):
             return  dp - int(ad2)
 
         if series['zygosity'] == 'het-alt':
-            return  dp - sum([ int(ad1), int(ad2) ])
+            return  dp - (int(ad1) + int(ad2))
 
         return dp  # hom-ref read depth == total read depth
 
     @staticmethod
     def _get_vartype(ref, alt):
         '''
-        This function assigns the following vartypes to the 
+        This function assigns the following vartypes to the
         allele specified by allele_base_col: snp, mnp, ins, del, indel or SV
-        
+
         '''
 
         def is_snp(ref, alt):
             """ Return whether or not the variant is a SNP """
-            if len(ref) != len(alt): return False
+            if len(ref) != len(alt):
+                return False
             base_diff = [nt for i, nt in enumerate(alt) if ref[i] != alt[i]]
             if len(base_diff) <= 1:
                     return True
@@ -154,39 +156,44 @@ class VariantFile(object):
                 return True
             return False
 
-        if is_snp(ref, alt): return 'snp'
-        elif is_sv(ref, alt): return 'sv'
-        elif is_mnp(ref, alt): return 'mnp'
-        elif is_insertion(ref, alt): return 'ins'
-        elif is_del(ref, alt): return 'del'
-        else: return 'indel or SV'
-
-
-
+        if is_snp(ref, alt):
+            return 'snp'
+        elif is_sv(ref, alt):
+            return 'sv'
+        elif is_mnp(ref, alt):
+            return 'mnp'
+        elif is_insertion(ref, alt):
+            return 'ins'
+        elif is_del(ref, alt):
+            return 'del'
+        else:
+            return 'indel or SV'
 
     def _generate_features(self):
 
         def multiallele_GL_formatting(df, gl_col):
-            GL_df = pd.DataFrame.from_records([i.split(",") for i in df[gl_col]],
-                                               columns=['AA_' + gl_col,
-                                                        'AB_' + gl_col,
-                                                        'BB_' + gl_col,
-                                                        'AC_' + gl_col,
-                                                        'BC_' + gl_col,
-                                                        'CC_' + gl_col])
+            data = [i.split(",") for i in df[gl_col]]
+            columns = ['AA_' + gl_col,
+                        'AB_' + gl_col,
+                        'BB_' + gl_col,
+                        'AC_' + gl_col,
+                        'BC_' + gl_col,
+                        'CC_' + gl_col]
+            GL_df = pd.DataFrame.from_records(data,
+                                              columns=columns)
             GL_df.index = df.index
             GL_df.fillna(value=-999, inplace=True)
-            df = df.join(GL_df)
-            return df
-
+            return GL_df
 
         def allele_col_formatting(df, al_col):
-            df[al_col + "_1"] = [int(i.split(",")[0]) if i.split(",")[0] != "." else -999
-                                 for i in df[al_col]]
-            df[al_col + "_2"] = [int(i.split(",")[1]) if i.split(",")[1] != "." else -999
-                                 for i in df[al_col]]
-            return df
-
+            col1 = al_col + "_1"
+            col2 = al_col + "_2"
+            # TODO beautify this using partial functions
+            df[col1] = [int(i.split(",")[0]) if i.split(",")[0] != "." else -999
+                        for i in df[al_col]]
+            df[col2] = [int(i.split(",")[1]) if i.split(",")[1] != "." else -999
+                        for i in df[al_col]]
+            return df[[col1, col2]]
 
         def format_category(df, category):
             return pd.get_dummies(df[category], prefix=category)
@@ -196,33 +203,31 @@ class VariantFile(object):
 
         # Formatting Allelic Features
         df_allele = df[features['allele']]
-        for a_cols in df_allele.columns:
-            df_allele = allele_col_formatting(df_allele, a_cols)
-            del df_allele[a_cols]
-
+        df_allele = pd.concat([allele_col_formatting(df_allele, col)
+                               for col in df_allele.columns],
+                              axis=1)
 
         # Formatting binary features
-        df_binary = df[features['binary']].fillna(value=0).applymap(lambda x: 1 if x != 0 else 0)
-
+        binarize = lambda x: 1 if x != 0 else 0
+        df_binary = df[features['binary']].fillna(value=0).applymap(binarize)
 
         # Formatting categorical features
         df_categ = pd.concat([format_category(df, category)
                               for category in features['categorical']],
                               axis=1)
 
-
         # Formatting genotype features
         df_geno = df[features['genotype']]
-        for g_cols in df_geno.columns:
-            df_geno = multiallele_GL_formatting(df_geno, g_cols)
-            del df_geno[g_cols]
-
+        df_geno = pd.concat([multiallele_GL_formatting(df_geno, col)
+                             for col in df_geno.columns],
+                            axis=1)
 
         # Formatting numeric features
         df_numeric = df[features['numeric']].astype(float)
 
         # Create feature dataframe
-        self._features_df = df_numeric.join([df_categ, df_geno, df_allele, df_binary])
+        self._features_df = df_numeric.join([df_categ, df_geno,
+                                            df_allele, df_binary])
 
         # Get rid of NaNs
         self._features_df.CGA_SDO.fillna(value=0, inplace=True)
@@ -245,7 +250,8 @@ class VcfTsv(VariantFile):
         df = self._variant_df
 
         # Ignore CNV and Repeats
-        discard_vars = ['<INS:ME:ALU>', '<INS:ME:L1>', '<CGA_CNVWIN>', '<INS:ME:SVA>']
+        discard_vars = ['<INS:ME:ALU>', '<INS:ME:L1>',
+                        '<CGA_CNVWIN>', '<INS:ME:SVA>']
         df = df[~df.ALT.isin(discard_vars)]
 
         # Parse many fields
@@ -254,6 +260,10 @@ class VcfTsv(VariantFile):
                           'ref_read_depth']
         for column in parse_columns:
             df[column] = ''
+
+        df['phase'] = df['GT'].map(self._get_phase)
+        df = df[df['phase'] != '-']
+
         df = df.apply(self._parse, axis=1)
 
         # Ignore sex chromosomes with - as phaser
@@ -269,18 +279,18 @@ class VcfTsv(VariantFile):
 
     def _parse(self, series):
         '''
-        Main processing function. Initial processing steps that might include feature generation
-        or alternate representation of the dataframe.
-        
+        Main processing function. Initial processing steps that might include
+        feature generation or alternate representation of the dataframe.
+
         '''
 
         ref, alt = series['REF'], series['ALT']
         sample = series['GT']
 
         # Phase genotype and remove edge cases, likely at sex chromosome sites
-        series['phase'] = self._get_phase(series['GT'])
-        if series['phase'] == '-':
-            return series
+        # series['phase'] = self._get_phase(series['GT'])
+        # if series['phase'] == '-':
+        #    return series
 
         # Get allele base sequences
         series['a1'] = self._get_allele(sample, series['phase'], ref, alt,
@@ -292,9 +302,11 @@ class VcfTsv(VariantFile):
         series['multiallele'] = 1 if ',' in alt else 0
 
         # Zygosity: hom-ref, het-ref, hom-alt, het-alt
-        series['zygosity'] = self._get_zygosity(series['a1'], series['a2'], ref)
+        series['zygosity'] = self._get_zygosity(series['a1'],
+                                                series['a2'],
+                                                ref)
 
-        # Set the variant type based on number of bases in reference versus allele
+        # Set the variant type based on number of bases in reference vs allele
         series['vartype1'] = self._get_vartype(ref, series['a1'])
         series['vartype2'] = self._get_vartype(ref, series['a2'])
 
@@ -302,8 +314,6 @@ class VcfTsv(VariantFile):
         series['ref_read_depth'] = self._get_ref_read_depth(series)
 
         return series
-
-
 
     def _load_vcf_tsv(self, filename):
         '''
@@ -330,7 +340,3 @@ class MasterVar(VariantFile):
 
     def _process(self):
         self._variant_df = None
-
-
-
-

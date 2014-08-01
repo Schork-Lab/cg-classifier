@@ -4,6 +4,7 @@ Created on Jul 22, 2014
 @author: Kunal Bhutani
 '''
 import pandas as pd
+import numpy as np
 
 
 class VariantFile(object):
@@ -17,9 +18,9 @@ class VariantFile(object):
                 'numeric': ['CGA_SDO', 'GQ', 'DP', 'CGA_RDP']
                 }
 
-    def __init__(self):
-        self._variant_df = None
-        self._features_df = None
+    def __init__(self, variant_df=None, features_df=None):
+        self._variant_df = variant_df
+        self._features_df = features_df
 
     @property
     def variants(self):
@@ -28,6 +29,49 @@ class VariantFile(object):
     @property
     def features(self):
         return self._features_df.astype(float)
+
+    @property
+    def _autosome_variants(self):
+        chroms = map(str, range(1, 23))
+        in_autosome = self._variant_df['CHROM'].astype(str).isin(chroms)
+        return in_autosome
+
+    @property
+    def _not_half_calls(self):
+        half_calls = ['0/.', './0', '0|.', '.|0', '1/.', './1', '1|.', '.|1']
+        not_half_calls = ~self._variant_df['GT'].isin(half_calls)
+        return not_half_calls
+
+    def filter(self, autosomes=True, not_half_calls=True, inplace=True):
+        '''
+
+        Filters variant df to only include autosomes and genotypes
+        that do not contain half calls. It is possible to do this
+        in place or create a new VariantFile object
+
+        :param autosomes:
+        :type autosomes:
+        :param not_half_calls:
+        :type not_half_calls:
+        :param inplace:
+        :type inplace:
+        '''
+        assert autosomes or not_half_calls, "Nothing to filter on."
+        indices = np.ones(len(self._variant_df), dtype=bool)
+        if autosomes:
+            indices = indices & self._autosome_variants
+        if not_half_calls:
+            indices = indices & self._not_half_calls
+
+        variant_df = self._variant_df[indices]
+        features_df = self._features_df[indices]
+
+        if inplace:
+            self._variant_df = variant_df
+            self._features_df = features_df
+
+        else:
+            return VariantFile(variant_df, features_df)
 
     @staticmethod
     def _get_phase(genotype):
@@ -235,10 +279,17 @@ class VariantFile(object):
 
 
 class VcfTsv(VariantFile):
-    def __init__(self, filename):
+    def __init__(self, filename, autosome_only=False, no_halfs=False):
 
         # Load VCF
         self._variant_df = self._load_vcf_tsv(filename)
+
+        # Filter
+        if autosome_only:
+            self._autosome_variants()
+
+        if no_halfs:
+            self._no_half_variants()
 
         # Process variants
         self._process()

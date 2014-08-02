@@ -4,6 +4,7 @@ Created on Jul 22, 2014
 @author: Kunal Bhutani
 '''
 import pandas as pd
+import pybedtools
 import numpy as np
 
 
@@ -72,6 +73,17 @@ class VariantFile(object):
 
         else:
             return VariantFile(variant_df, features_df)
+
+    def create_bed(self):
+        df = self._variant_df
+        df['Start'] = df['POS'] - 1
+        bed_index = ['CHROM', 'Start', 'POS', 'REF', 'ALT']
+        bed_repr = df.to_string(header=False, index_names=False,
+                                index=None,
+                                sparsify=False,
+                                columns=bed_index)
+        bedtool = pybedtools.BedTool(bed_repr, from_string=True)
+        return bedtool
 
     @staticmethod
     def _get_phase(genotype):
@@ -199,7 +211,8 @@ class VariantFile(object):
             if len(ref) > len(alt):
                 return True
             return False
-
+        if ref == alt:
+            return 'ref'
         if is_snp(ref, alt):
             return 'snp'
         elif is_sv(ref, alt):
@@ -223,8 +236,12 @@ class VariantFile(object):
                         'AC_' + gl_col,
                         'BC_' + gl_col,
                         'CC_' + gl_col]
-            GL_df = pd.DataFrame.from_records(data,
-                                              columns=columns)
+
+            GL_df = pd.DataFrame.from_records(data)
+            num_of_genotypes = len(GL_df.columns)
+            GL_df.columns = columns[:num_of_genotypes]
+            for unused_col in columns[num_of_genotypes:]:
+                GL_df.unused_col = -999
             GL_df.index = df.index
             GL_df.fillna(value=-999, inplace=True)
             return GL_df
@@ -279,7 +296,8 @@ class VariantFile(object):
 
 
 class VcfTsv(VariantFile):
-    def __init__(self, filename, autosome_only=False, no_halfs=False):
+    def __init__(self, filename, generate_features=True,
+                 autosome_only=False, no_halfs=False):
 
         # Load VCF
         self._variant_df = self._load_vcf_tsv(filename)
@@ -295,7 +313,10 @@ class VcfTsv(VariantFile):
         self._process()
 
         # Generate features
-        self._generate_features()
+        if generate_features:
+            self._generate_features()
+        else:
+            self._features_df = pd.DataFrame([])
 
     def _process(self):
         df = self._variant_df

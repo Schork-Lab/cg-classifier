@@ -10,10 +10,16 @@ from variants import VariantFile
 
 class Statistics():
 
-    def __init__(self, variant_file, exon_file=None):
-        assert isinstance(variant_file, VariantFile), "VariantFile needed"
-        self.variant_file = variant_file
-        self.df = self.variant_file.variants.copy()
+    def __init__(self, variants, exon_file=None, from_df=False):
+
+        if from_df:
+            self.df = variants
+
+        else:
+            assert isinstance(variants, VariantFile), "VariantFile needed"
+            self.variants = variants
+            self.df = self.variants.variants.copy()
+
         self.df = self.df[~self.df.GT.map(lambda x: '.' in x)]
         if exon_file:
             self.exon_df = self._intersect_exon_bed(exon_file)
@@ -22,19 +28,22 @@ class Statistics():
         self._generate_statistics(exon_file)
         return
 
+    def from_df(self, df, exon_file=None):
+        self.__init__(df, exon_file, True)
+
     def _generate_statistics(self, exon_file=None):
 
         df = self.df
         self.counts = self._overall_counts(df)
         self.base_changes = self._base_changes(df)
-        self.allele_depths = self._read_depths(df)
+        self.allele_depths = self._read_depths_2(df)
         self.ts_tv = self._ts_tv(self.base_changes)
 
         if exon_file:
             exon_df = self.exon_df
             self.exon_counts = self._overall_counts(exon_df)
             self.exon_base_changes = self._base_changes(exon_df)
-            self.exon_allele_depths = self._read_depths(exon_df)
+            self.exon_allele_depths = self._read_depths_2(exon_df)
             self.exon_ts_tv = self._ts_tv(self.exon_base_changes)
 
         return
@@ -47,6 +56,42 @@ class Statistics():
                                df_hom.vartype1.value_counts()],
                              axis=1)
         return count_df.sum(axis=1)
+
+    def _read_depths_2(self, df):
+        read_depths = defaultdict(lambda: defaultdict(list))
+        df['AD_1'] = df['AD'].map(lambda x: int(x.split(',')[0]))
+        df['AD_2'] = df['AD'].map(lambda x: int(x.split(',')[1]))
+        vartypes = df.vartype1.unique()
+
+        for vartype in vartypes:
+
+            var1 = df.vartype1 == vartype
+            var2 = df.vartype2 == vartype
+            hom_alt = df.zygosity == 'hom-alt'
+            het_ref = df.zygosity == 'het-ref'
+            het_alt = df.zygosity == 'het-alt'
+
+            # If 1/1, add just one read depth
+            var_df = df[var1 & var2 & hom_alt]
+            read_depths[vartype]['hom-alt'].extend(var_df['AD_1'].astype(int).values)
+
+            # If 1/0, add first read depth
+            var_df = df[var1 & het_ref]
+            read_depths[vartype]['het-ref'].extend(var_df['AD_1'].values)
+
+            # If 1/2, add first read depth
+            var_df = df[var1 & het_alt]
+            read_depths[vartype]['het-alt'].extend(var_df['AD_1'].values)
+
+            # If 0/1, add second read depth
+            var_df = df[var2 & het_ref]
+            read_depths[vartype]['het-ref'].extend(var_df['AD_2'].values)
+
+            # If 2/1, add second read depth
+            var_df = df[var2 & het_alt]
+            read_depths[vartype]['het-alt'].extend(var_df['AD_2'].values)
+
+        return pd.DataFrame(read_depths)
 
     def _read_depths(self, df):
         read_depths = defaultdict(lambda: defaultdict(list))
@@ -84,14 +129,14 @@ class Statistics():
         exon_bed = pybedtools.BedTool(exon_file)
         variant_bed = create_bed(self.df)
         overlapping_variants = variant_bed.intersect(exon_bed)
-        if self.variant_file.variants.CHROM.dtype == 'int64':
+        if self.df.CHROM.dtype == 'int64':
             indices = [(int(x[0]), int(x[2]), x[3], x[4])
                        for x in overlapping_variants]
         else:
             indices = [(x[0], int(x[2]), x[3], x[4])
                        for x in overlapping_variants]
 
-        return self.variant_file.variants.ix[indices]
+        return self.df.ix[indices]
 
     def _base_changes(self, df):
         '''

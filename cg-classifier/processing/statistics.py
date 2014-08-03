@@ -60,13 +60,42 @@ class Statistics():
         return count_df.sum(axis=1)
 
     def _indel_lengths(self, df):
+
+        def get_lengths(var_df, allele):
+            ref_length = var_df['REF'].map(len)
+            allele_length = var_df[allele].map(len)
+            return allele_length - ref_length
+
         lengths = defaultdict(lambda: defaultdict(list))
+
+        hom_alt = df.zygosity == 'hom-alt'
+        het_ref = df.zygosity == 'het-ref'
+        het_alt = df.zygosity == 'het-alt'
+
         for vartype in ['ins', 'del']:
-            for allele in ['1', '2']:
-                var_df = df[df['vartype' + allele] == vartype]
-                allele_length = var_df['a' + allele].map(len)
-                ref_length = var_df['REF'].map(len)
-                lengths[vartype][allele].extend(allele_length - ref_length)
+
+            var1 = df.vartype1 == vartype
+            var2 = df.vartype2 == vartype
+
+            # If 1/1, add just one read depth
+            var_df = df[var1 & var2 & hom_alt]
+            lengths[vartype]['hom-alt'].extend(get_lengths(var_df, 'a1'))
+
+            # If 1/0, add first read depth
+            var_df = df[var1 & het_ref]
+            lengths[vartype]['het-ref'].extend(get_lengths(var_df, 'a1'))
+
+            # If 1/2, add first read depth
+            var_df = df[var1 & het_alt]
+            lengths[vartype]['het-alt'].extend(get_lengths(var_df, 'a1'))
+
+            # If 0/1, add second read depth
+            var_df = df[var2 & het_ref]
+            lengths[vartype]['het-ref'].extend(get_lengths(var_df, 'a2'))
+
+            # If 2/1, add second read depth
+            var_df = df[var2 & het_alt]
+            lengths[vartype]['het-alt'].extend(get_lengths(var_df, 'a2'))
 
         return pd.DataFrame(lengths)
 
@@ -74,19 +103,21 @@ class Statistics():
         read_depths = defaultdict(lambda: defaultdict(list))
         df['AD_1'] = df['AD'].map(lambda x: int(x.split(',')[0]))
         df['AD_2'] = df['AD'].map(lambda x: int(x.split(',')[1]))
+
+        hom_alt = df.zygosity == 'hom-alt'
+        het_ref = df.zygosity == 'het-ref'
+        het_alt = df.zygosity == 'het-alt'
+
         vartypes = df.vartype1.unique()
 
         for vartype in vartypes:
 
             var1 = df.vartype1 == vartype
             var2 = df.vartype2 == vartype
-            hom_alt = df.zygosity == 'hom-alt'
-            het_ref = df.zygosity == 'het-ref'
-            het_alt = df.zygosity == 'het-alt'
 
             # If 1/1, add just one read depth
             var_df = df[var1 & var2 & hom_alt]
-            read_depths[vartype]['hom-alt'].extend(var_df['AD_1'].astype(int).values)
+            read_depths[vartype]['hom-alt'].extend(var_df['AD_1'].values)
 
             # If 1/0, add first read depth
             var_df = df[var1 & het_ref]

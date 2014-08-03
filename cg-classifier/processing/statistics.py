@@ -38,6 +38,7 @@ class Statistics():
         self.base_changes = self._base_changes(df)
         self.allele_depths = self._read_depths_2(df)
         self.ts_tv = self._ts_tv(self.base_changes)
+        self.indels = self._indel_lengths(df)
 
         if exon_file:
             exon_df = self.exon_df
@@ -45,6 +46,7 @@ class Statistics():
             self.exon_base_changes = self._base_changes(exon_df)
             self.exon_allele_depths = self._read_depths_2(exon_df)
             self.exon_ts_tv = self._ts_tv(self.exon_base_changes)
+            self.exon_indels = self._indel_lengths(exon_df)
 
         return
 
@@ -56,6 +58,17 @@ class Statistics():
                                df_hom.vartype1.value_counts()],
                              axis=1)
         return count_df.sum(axis=1)
+
+    def _indel_lengths(self, df):
+        lengths = defaultdict(lambda: defaultdict(list))
+        for vartype in ['ins', 'del']:
+            for allele in ['1', '2']:
+                var_df = df[df['vartype' + allele] == vartype]
+                allele_length = var_df['a' + allele].map(len)
+                ref_length = var_df['REF'].map(len)
+                lengths[vartype][allele].extend(allele_length - ref_length)
+
+        return pd.DataFrame(lengths)
 
     def _read_depths_2(self, df):
         read_depths = defaultdict(lambda: defaultdict(list))
@@ -213,11 +226,13 @@ class Statistics():
         stats['base_changes'] = self.base_changes
         stats['ts_tv'] = self.ts_tv
         stats['allele_depths'] = self.allele_depths
+        stats['indels'] = self.indels
 
         if self.exon_df is not None:
             stats['exon_counts'] = self.exon_counts
             stats['exon_base_changes'] = self.exon_base_changes
             stats['exon_allele_depths'] = self.exon_allele_depths
             stats['exon_ts_tv'] = self.exon_ts_tv
+            stats['exon_indels'] = self.exon_indels
 
         cPickle.dump(stats, open(filename, 'wb'))

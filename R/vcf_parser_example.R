@@ -7,7 +7,7 @@ training.dir = "/gpfs/home/erscott/Datasets_raw/PlatinumGenomes/NA12877/NA12877_
 tp = readVcf(paste(training.dir, "tp.vcf.gz", sep=""), genome="hg19")
 tp.features = vcfToDf(tp)
 
-fp = readVcf(paste(training.dir, "fp.vcf.gz", sep=""), genome="hg19")
+fp = readVcf(paste(training.dir, "NA12877_multi.vcf.gz", sep=""), genome="hg19")
 fp.features = vcfToDf(fp)
 
 save(tp.features, fp.features, file="features.Rdata")

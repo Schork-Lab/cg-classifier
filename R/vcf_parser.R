@@ -1,5 +1,6 @@
-library("VariantAnnotation")
+library("plyr")
 library('dplyr')
+library("VariantAnnotation")
 library("tidyr")
 library("reshape2")
 
@@ -54,7 +55,7 @@ process.sequences <- function(rd){
   
   bases = elementMetadata(rd) %>%
     as.data.frame %>%
-    select(REF, ALT) %>%
+    dplyr::select(REF, ALT) %>%
     lapply(as.character) %>%
     as.data.frame(stringsAsFactors=F) %>% 
     mutate(REF.length=nchar(REF), ALT.length=nchar(ALT)) %>%
@@ -93,7 +94,7 @@ process.loci <- function(loci){
     mutate(IS.GC.RICH=grepl("GC_rich", CGA_RPT)) %>%
     mutate(IS.LOW.COMPLEXITY=grepl("Low_complexity", CGA_RPT)) %>%
     mutate(VarID=row.names(loci)) %>%
-    select(VarID, IS.INTRON, IS.CDS, IS.UTR, IS.AT.RICH, IS.GC.RICH, IS.LOW.COMPLEXITY)
+    dplyr::select(VarID, IS.INTRON, IS.CDS, IS.UTR, IS.AT.RICH, IS.GC.RICH, IS.LOW.COMPLEXITY)
 }
 
 vcfToDf <- function(v){

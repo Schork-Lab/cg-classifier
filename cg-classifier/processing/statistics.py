@@ -16,15 +16,16 @@ class Statistics():
             self.df = variants
 
         else:
-            assert isinstance(variants, VariantFile), "VariantFile needed"
             self.variants = variants
             self.df = self.variants.variants.copy()
 
         self.df = self.df[~self.df.GT.map(lambda x: '.' in x)]
+        '''
         if exon_file:
             self.exon_df = self._intersect_exon_bed(exon_file)
         else:
             self.exon_df = None
+        '''
         self._generate_statistics(exon_file)
         return
 
@@ -35,6 +36,7 @@ class Statistics():
 
         df = self.df
         self.counts = self._overall_counts(df)
+        '''
         self.base_changes = self._base_changes(df)
         self.allele_depths = self._read_depths_2(df)
         self.ts_tv = self._ts_tv(self.base_changes)
@@ -47,15 +49,16 @@ class Statistics():
             self.exon_allele_depths = self._read_depths_2(exon_df)
             self.exon_ts_tv = self._ts_tv(self.exon_base_changes)
             self.exon_indels = self._indel_lengths(exon_df)
-
+        '''
         return
 
-    def _overall_counts(self, df):
+    @staticmethod
+    def _overall_counts(df):
         df_not_hom = df[df.zygosity != 'hom-alt']
         df_hom = df[df.zygosity == 'hom-alt']
-        count_df = pd.concat([df_not_hom.vartype1.value_counts(),
-                               df_hom.vartype2.value_counts(),
-                               df_hom.vartype1.value_counts()],
+        count_df = pd.concat([df_hom.vartype1.value_counts(),
+                               df_not_hom.vartype2.value_counts(),
+                               df_not_hom.vartype1.value_counts()],
                              axis=1)
         return count_df.sum(axis=1)
 
@@ -254,6 +257,7 @@ class Statistics():
     def save(self, filename):
         stats = {}
         stats['counts'] = self.counts
+        '''
         stats['base_changes'] = self.base_changes
         stats['ts_tv'] = self.ts_tv
         stats['allele_depths'] = self.allele_depths
@@ -265,5 +269,5 @@ class Statistics():
             stats['exon_allele_depths'] = self.exon_allele_depths
             stats['exon_ts_tv'] = self.exon_ts_tv
             stats['exon_indels'] = self.exon_indels
-
+        '''
         cPickle.dump(stats, open(filename, 'wb'))

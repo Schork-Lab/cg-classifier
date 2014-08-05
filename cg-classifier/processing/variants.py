@@ -33,14 +33,16 @@ class VariantFile(object):
 
     @property
     def _autosome_variants(self):
-        chroms = map(str, range(1, 23))
-        in_autosome = self._variant_df['CHROM'].astype(str).isin(chroms)
+        chroms = range(1, 23)
+        if self.variants.CHROM.dtype != 'int64':
+            chroms = map(str, chroms)
+        chroms = set(chroms)
+        in_autosome = self.variants['CHROM'].map(lambda x: x in chroms)
         return in_autosome
 
     @property
     def _not_half_calls(self):
-        half_calls = ['0/.', './0', '0|.', '.|0', '1/.', './1', '1|.', '.|1']
-        not_half_calls = ~self._variant_df['GT'].isin(half_calls)
+        not_half_calls = ~self.variants['GT'].map(lambda x: '.' in x)
         return not_half_calls
 
     def filter(self, autosomes=True, not_half_calls=True, inplace=True):
@@ -304,10 +306,10 @@ class VcfTsv(VariantFile):
 
         # Filter
         if autosome_only:
-            self._autosome_variants()
+            self._variant_df = self._variant_df[self._autosome_variants]
 
         if no_halfs:
-            self._no_half_variants()
+            self._variant_df = self._variant_df[self._not_half_calls]
 
         # Process variants
         self._process()

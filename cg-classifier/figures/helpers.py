@@ -26,6 +26,30 @@ sns.set("paper", {"lines.linewidth": 2,
 # Axes size
 item_labels_size = 10
 
+def get_colors():
+
+    colors = {'CG Only': '#fc8d62',
+              'CG + NIST': '#8da0cb',
+              'CG + RTG': '#67a9cf',
+              'RTG + NIST': '#e78ac3',
+              'NIST Only': '#8da0cb',
+              'RTG Only': '#67a9cf'}
+    return colors
+
+
+def beautify_axis(original_axis):
+    def new_plot(*args, **kwargs):
+        ax = original_axis(*args, **kwargs)
+        ax = adjust_spines(ax, ['left', 'bottom'])
+        ax.spines['top'].set_visible(False)
+        ax.yaxis.set_ticks_position('left')
+        ax.xaxis.set_ticks_position('bottom')
+        ax = my_rstyle(ax)
+        for item in ax.get_xticklabels() + ax.get_yticklabels():
+            item.set_fontsize(item_labels_size)
+
+        return ax
+    return new_plot
 
 def beautify(original_plot):
     def new_plot(*args, **kwargs):
@@ -67,7 +91,8 @@ def count_box_plot(count_df, colors, ax=None, fig=None):
         rects[group] = ax.bar([val + (ix * width) for val in ind], values,
                               width, color=colors[group], ecolor='black')
 
-    ax.set_xticks([val + width for val in ind])
+    num_of_groups = float(len(groups))
+    ax.set_xticks([val + width * (num_of_groups / 2) for val in ind])
     measurements = count_df.index
     ax.set_xticklabels(measurements)
     ax.grid(False, which='major', axis='x')
@@ -90,6 +115,8 @@ def get_count_df(stats):
 def plot_counts(fig, ax, count_df, colors):
     fig, ax = count_box_plot(count_df, colors, ax, fig)
     ax.set_ylabel('Number of Variants (log10)')  # , fontdict={'size':10})
+    ax.set_ylim([0, 7])
+    ax.set_yticks([i for i in range(7)])
     return fig, ax
 
 def my_rstyle(ax):
@@ -127,3 +154,5 @@ def my_rstyle(ax):
         lg = ax.legend_
         lg.get_frame().set_linewidth(0)
         lg.get_frame().set_alpha(0.5)
+
+    return ax

@@ -296,8 +296,8 @@ class VariantFile(object):
 
 
 class VcfTsv(VariantFile):
-    def __init__(self, filename, generate_features=True,
-                 autosome_only=False, no_halfs=False):
+    def __init__(self, filename, generate_features=False,
+                 autosome_only=True, no_halfs=True):
 
         # Load VCF
         self._variant_df = self._load_vcf_tsv(filename)
@@ -383,7 +383,7 @@ class VcfTsv(VariantFile):
         series['vartype2'] = self._get_vartype(ref, series['a2'])
 
         # Get number of reads supporting the reference allele
-        series['ref_read_depth'] = self._get_ref_read_depth(series)
+        # series['ref_read_depth'] = self._get_ref_read_depth(series)
 
         return series
 

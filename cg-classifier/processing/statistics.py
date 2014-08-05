@@ -50,12 +50,13 @@ class Statistics():
 
         return
 
-    def _overall_counts(self, df):
+    @staticmethod
+    def _overall_counts(df):
         df_not_hom = df[df.zygosity != 'hom-alt']
         df_hom = df[df.zygosity == 'hom-alt']
-        count_df = pd.concat([df_not_hom.vartype1.value_counts(),
-                               df_hom.vartype2.value_counts(),
-                               df_hom.vartype1.value_counts()],
+        count_df = pd.concat([df_hom.vartype1.value_counts(),
+                               df_not_hom.vartype2.value_counts(),
+                               df_not_hom.vartype1.value_counts()],
                              axis=1)
         return count_df.sum(axis=1)
 
